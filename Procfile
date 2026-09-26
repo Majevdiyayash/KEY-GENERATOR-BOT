@@ -1,0 +1,1 @@
+worker: python keybot.py
