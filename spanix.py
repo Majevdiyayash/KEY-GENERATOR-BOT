@@ -34,6 +34,13 @@ async def call_api(payload: dict) -> dict:
         async with session.post(API_URL, json=payload, headers=headers, timeout=12) as resp:
             return await resp.json()
 
+async def safe_followup(interaction: discord.Interaction, embed: discord.Embed, view: discord.ui.View = None, ephemeral: bool = False):
+    """Safely sends followup without ever passing view=None to discord.py."""
+    kwargs = {"embed": embed, "ephemeral": ephemeral}
+    if view is not None:
+        kwargs["view"] = view
+    await interaction.followup.send(**kwargs)
+
 @bot.event
 async def on_ready():
     print(f"==================================================")
@@ -74,16 +81,17 @@ async def on_interaction(interaction: discord.Interaction):
                         color=SUCCESS_COLOR
                     )
                     embed.set_footer(text=FOOTER_TEXT)
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await safe_followup(interaction, embed, ephemeral=True)
                 else:
                     embed = discord.Embed(
                         title="❌ Action Failed",
                         description=f"**Error:** {data.get('message', 'Unknown API Error')}",
                         color=ERROR_COLOR
                     )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await safe_followup(interaction, embed, ephemeral=True)
             except Exception as e:
-                await interaction.followup.send(f"⚠️ **System Error:** {str(e)}", ephemeral=True)
+                embed = discord.Embed(title="⚠️ System Error", description=str(e), color=ERROR_COLOR)
+                await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: Help & Bot Information ──
 @bot.tree.command(name="spanixhelp", description="Display SPANIX Key Bot help menu & available commands.")
@@ -132,7 +140,6 @@ async def genkey(interaction: discord.Interaction, package: str, days: int = 30,
     try:
         data = await call_api(payload)
         if data.get("success"):
-            # API returns keys directly in data["keys"] or data["data"]["keys"]
             keys = data.get("keys", [])
             if not keys and isinstance(data.get("data"), dict):
                 keys = data.get("data", {}).get("keys", [])
@@ -154,24 +161,25 @@ async def genkey(interaction: discord.Interaction, package: str, days: int = 30,
             
             embed.set_footer(text=FOOTER_TEXT)
             
+            view = None
             if len(keys) == 1:
                 key_single = keys[0]
                 view = discord.ui.View()
                 view.add_item(discord.ui.Button(label="Reset HWID", custom_id=f"reset_hwid:{key_single}", style=discord.ButtonStyle.primary))
                 view.add_item(discord.ui.Button(label="Ban Key", custom_id=f"ban_key:{key_single}", style=discord.ButtonStyle.secondary))
                 view.add_item(discord.ui.Button(label="Delete Key", custom_id=f"delete_key:{key_single}", style=discord.ButtonStyle.danger))
-                await interaction.followup.send(embed=embed, view=view)
-            else:
-                await interaction.followup.send(embed=embed)
+                
+            await safe_followup(interaction, embed, view=view)
         else:
             embed = discord.Embed(
                 title="❌ Generation Failed",
                 description=f"**API Message:** {data.get('message', 'Unknown Error')}",
                 color=ERROR_COLOR
             )
-            await interaction.followup.send(embed=embed)
+            await safe_followup(interaction, embed)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}")
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed)
 
 # ── Command: Check Key Details ──
 @bot.tree.command(name="keyinfo", description="Check SPANIX key details, status, and HWID.")
@@ -194,11 +202,13 @@ async def keyinfo(interaction: discord.Interaction, key: str):
             view.add_item(discord.ui.Button(label="Reset HWID", custom_id=f"reset_hwid:{key}", style=discord.ButtonStyle.primary))
             view.add_item(discord.ui.Button(label="Delete Key", custom_id=f"delete_key:{key}", style=discord.ButtonStyle.danger))
             
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await safe_followup(interaction, embed, view=view, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Key not found')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Key Not Found", description=data.get('message', 'Key not found'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: Reset HWID ──
 @bot.tree.command(name="resethwid", description="Reset HWID for a SPANIX key.")
@@ -210,11 +220,13 @@ async def resethwid(interaction: discord.Interaction, key: str):
         if data.get("success"):
             embed = discord.Embed(title="🔄 HWID Reset Success", description=f"HWID reset for key: `{key}`", color=SUCCESS_COLOR)
             embed.set_footer(text=FOOTER_TEXT)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await safe_followup(interaction, embed, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Failed to reset HWID')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Reset Failed", description=data.get('message', 'Failed to reset HWID'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: Ban Key ──
 @bot.tree.command(name="bankey", description="Ban/suspend a SPANIX license key.")
@@ -226,11 +238,13 @@ async def bankey(interaction: discord.Interaction, key: str):
         if data.get("success"):
             embed = discord.Embed(title="🚫 Key Banned", description=f"Key `{key}` has been banned.", color=ERROR_COLOR)
             embed.set_footer(text=FOOTER_TEXT)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await safe_followup(interaction, embed, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Failed to ban key')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Ban Failed", description=data.get('message', 'Failed to ban key'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: Unban Key ──
 @bot.tree.command(name="unbankey", description="Unban a SPANIX license key.")
@@ -242,11 +256,13 @@ async def unbankey(interaction: discord.Interaction, key: str):
         if data.get("success"):
             embed = discord.Embed(title="✅ Key Unbanned", description=f"Key `{key}` has been unbanned.", color=SUCCESS_COLOR)
             embed.set_footer(text=FOOTER_TEXT)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await safe_followup(interaction, embed, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Failed to unban key')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Unban Failed", description=data.get('message', 'Failed to unban key'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: Delete Key ──
 @bot.tree.command(name="deletekey", description="Permanently delete a SPANIX license key.")
@@ -258,11 +274,13 @@ async def deletekey(interaction: discord.Interaction, key: str):
         if data.get("success"):
             embed = discord.Embed(title="🗑️ Key Deleted", description=f"Key `{key}` was permanently deleted.", color=SUCCESS_COLOR)
             embed.set_footer(text=FOOTER_TEXT)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await safe_followup(interaction, embed, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Failed to delete key')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Deletion Failed", description=data.get('message', 'Failed to delete key'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 # ── Command: List Packages ──
 @bot.tree.command(name="packages", description="View all available SPANIX packages.")
@@ -280,11 +298,13 @@ async def packages(interaction: discord.Interaction):
                     inline=True
                 )
             embed.set_footer(text=FOOTER_TEXT)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await safe_followup(interaction, embed, ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ {data.get('message', 'Failed to load packages')}", ephemeral=True)
+            embed = discord.Embed(title="❌ Packages Failed", description=data.get('message', 'Failed to load packages'), color=ERROR_COLOR)
+            await safe_followup(interaction, embed, ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"⚠️ **Error:** {str(e)}", ephemeral=True)
+        embed = discord.Embed(title="⚠️ Error", description=str(e), color=ERROR_COLOR)
+        await safe_followup(interaction, embed, ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
